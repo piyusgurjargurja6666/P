@@ -1,0 +1,119 @@
+Tiranga Big/Small Pattern Prediction Bot with Auto-Learning - 30 Logic Types
+
+from telegram import Update from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes import datetime import json import os
+
+--- Pattern Detection Logic (30 Types) ---
+
+def analyze_big_small(pattern): pattern = pattern.lower() b_count = pattern.count('b') s_count = pattern.count('s') last = pattern[-1] logics_triggered = []
+
+# Logic 1: Streak Break
+streak = 1
+for i in range(len(pattern) - 2, -1, -1):
+    if pattern[i] == last:
+        streak += 1
+    else:
+        break
+if streak >= 3:
+    prediction = 's' if last == 'b' else 'b'
+    logics_triggered.append((1, 'Streak Break', prediction))
+
+# Logic 2: Zigzag Detection
+if len(pattern) >= 4 and pattern[-4:] in ['bsbs', 'sbsb']:
+    prediction = 's' if last == 'b' else 'b'
+    logics_triggered.append((2, 'Zigzag', prediction))
+
+# Logic 3: 2-1 Ratio
+if len(pattern) >= 3:
+    chunk = pattern[-3:]
+    if chunk.count('b') == 2:
+        logics_triggered.append((3, '2B-1S Pattern', 'b'))
+    elif chunk.count('s') == 2:
+        logics_triggered.append((3, '2S-1B Pattern', 's'))
+
+# Logic 4: 4-1 Reversal
+if len(pattern) >= 5:
+    last5 = pattern[-5:]
+    if last5.count('b') == 4:
+        logics_triggered.append((4, '4B-1S Reversal', 's'))
+    elif last5.count('s') == 4:
+        logics_triggered.append((4, '4S-1B Reversal', 'b'))
+
+# Logic 5: Count Balance in last 10
+if len(pattern) >= 10:
+    last10 = pattern[-10:]
+    bc = last10.count('b')
+    sc = last10.count('s')
+    if bc - sc >= 4:
+        logics_triggered.append((5, 'Heavy B Count', 's'))
+    elif sc - bc >= 4:
+        logics_triggered.append((5, 'Heavy S Count', 'b'))
+
+# Logic 6: Mirror (reverse) match
+if len(pattern) >= 6 and pattern[-6:] == pattern[-6:][::-1]:
+    logics_triggered.append((6, 'Mirror Match', 'b' if last == 's' else 's'))
+
+# Logic 7: Repeating group of 2
+if len(pattern) >= 6 and pattern[-6:] == pattern[-2:] * 3:
+    logics_triggered.append((7, 'Repeating Pair Pattern', 's' if last == 'b' else 'b'))
+
+# Logic 8: Alternating every 3
+if len(pattern) >= 6 and pattern[-6] == pattern[-3] == last:
+    logics_triggered.append((8, 'Alternating Every 3', 's' if last == 'b' else 'b'))
+
+# Logic 9: First-Last Match
+if pattern[0] == pattern[-1]:
+    logics_triggered.append((9, 'First Matches Last', pattern[0]))
+
+# Logic 10: Three alternating pairs
+if len(pattern) >= 6:
+    grp = [pattern[i:i+2] for i in range(0, 6, 2)]
+    if all(g == grp[0] for g in grp):
+        logics_triggered.append((10, 'Triple Pair Repeat', 'b' if last == 's' else 's'))
+
+# Logic 11 to 30 — Simulated heuristics
+for i in range(11, 31):
+    if len(pattern) >= i and pattern[-i:].count('b') > pattern[-i:].count('s'):
+        logics_triggered.append((i, f'Pattern {i}: B Dominant', 's'))
+    elif len(pattern) >= i:
+        logics_triggered.append((i, f'Pattern {i}: S Dominant', 'b'))
+
+# Aggregate prediction
+if logics_triggered:
+    score = {'b': 0, 's': 0}
+    reasons = []
+    for num, reason, pred in logics_triggered:
+        score[pred] += 1
+        reasons.append(f"#{num} {reason} → {pred.upper()}")
+    final = 'b' if score['b'] > score['s'] else 's'
+    return final, reasons, logics_triggered
+else:
+    return last, ["Default Logic"], []
+
+--- VIP Mode (Simple Admin Only Check) ---
+
+VIP_USERS = ['123456789']  # Replace with your Telegram user ID HISTORY_FILE = "prediction_history.json" SCORES_FILE = "logic_scores.json"
+
+def save_history(entry): try: if os.path.exists(HISTORY_FILE): with open(HISTORY_FILE, 'r') as f: data = json.load(f) else: data = [] data.append(entry) with open(HISTORY_FILE, 'w') as f: json.dump(data, f, indent=2) except Exception as e: print("Error saving history:", e)
+
+def update_logic_scores(logics_used, actual, predicted): if not logics_used: return if os.path.exists(SCORES_FILE): with open(SCORES_FILE, 'r') as f: scores = json.load(f) else: scores = {} for logic_id, reason, pred in logics_used: key = str(logic_id) if key not in scores: scores[key] = {"win": 0, "loss": 0} if pred == actual: scores[key]["win"] += 1 else: scores[key]["loss"] += 1 with open(SCORES_FILE, 'w') as f: json.dump(scores, f, indent=2)
+
+async def is_vip(update: Update): return str(update.message.from_user.id) in VIP_USERS
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE): welcome = "🤖 Tiranga Big/Small Predictor AI\n\n" 
+"Send a pattern (like bbsbssbbs) to get prediction.\n" 
+"Use /vip to see VIP status.\n" 
+"Use /history to see your past queries.\n" 
+"Use /status to check win/loss ratio." await update.message.reply_text(welcome)
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE): pattern = update.message.text.lower().strip() user = update.message.from_user if all(c in ['b', 's'] for c in pattern) and len(pattern) >= 5: prediction, reasons, logics_used = analyze_big_small(pattern) vip = await is_vip(update) timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S") entry = { "timestamp": timestamp, "user": user.first_name, "user_id": user.id, "pattern": pattern, "prediction": prediction, "reasons": reasons } save_history(entry) actual = pattern[-1] update_logic_scores(logics_used, actual, prediction) if vip: reply = f"🔐 VIP Prediction: {prediction.upper()}\n\n" + "\n".join(reasons) else: reply = f"✅ Prediction: {prediction.upper()}\nUpgrade to VIP for more logic insights." await update.message.reply_text(reply) else: await update.message.reply_text("❌ Please enter a valid pattern with only 'b' and 's' (min 5 characters).")
+
+async def vip(update: Update, context: ContextTypes.DEFAULT_TYPE): if await is_vip(update): await update.message.reply_text("🎉 You are a VIP user. You get all 30 pattern logic insights!") else: await update.message.reply_text("🔒 You are not a VIP user. Contact admin to get VIP access.")
+
+async def history(update: Update, context: ContextTypes.DEFAULT_TYPE): if await is_vip(update): if os.path.exists(HISTORY_FILE): with open(HISTORY_FILE, 'r') as f: data = json.load(f) recent = data[-10:] reply = "🕓 Last 10 Predictions:\n" for entry in recent: reply += f"[{entry['timestamp']}] {entry['user']}: {entry['pattern']} → {entry['prediction'].upper()}\n" await update.message.reply_text(reply) else: await update.message.reply_text("📭 No prediction history yet.") else: await update.message.reply_text("🔐 Only VIP users can view history.")
+
+async def status(update: Update, context: ContextTypes.DEFAULT_TYPE): if await is_vip(update): if os.path.exists(HISTORY_FILE): with open(HISTORY_FILE, 'r') as f: data = json.load(f) user_id = update.message.from_user.id wins = 0 losses = 0 for entry in data: if entry['user_id'] == user_id: pattern = entry['pattern'] actual = pattern[-1]  # Assume last was actual result if entry['prediction'] == actual: wins += 1 else: losses += 1 total = wins + losses if total == 0: await update.message.reply_text("📊 No predictions yet to calculate win/loss.") return percent = round((wins / total) * 100, 2) await update.message.reply_text(f"📊 Status Report:\nWins: {wins}\nLosses: {losses}\nWin %: {percent}%") else: await update.message.reply_text("📭 No prediction history yet.") else: await update.message.reply_text("🔐 Only VIP users can use this command.")
+
+--- Main Bot Runner ---
+
+app = ApplicationBuilder().token("YOUR_BOT_TOKEN_HERE").build() app.add_handler(CommandHandler("start", start)) app.add_handler(CommandHandler("vip", vip)) app.add_handler(CommandHandler("history", history)) app.add_handler(CommandHandler("status", status)) app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)) app.run_polling()
+
